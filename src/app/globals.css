@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+:root {
+  --ivest-gold: #C9A84C;
+  --ivest-gold-dark: #7A5F1E;
+  --ivest-ink: #1A1A2E;
+}
+
+body {
+  background: #0F0F1A;
+  color: #F5F3ED;
+}
