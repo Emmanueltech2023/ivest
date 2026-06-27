@@ -4,16 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export default function SignUpPage() {
+export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
-  const [form, setForm] = useState({
-    fullName: "",
-    username: "",
-    email: "",
-    password: "",
-    phone: "",
-  });
+  const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,62 +20,30 @@ export default function SignUpPage() {
     setLoading(true);
     setError(null);
 
-    try {
-  // Check username is unique
-const checkRes = await fetch("/api/profile/check-username", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ username: form.username }),
-});
-const { taken } = await checkRes.json();
+    const { data, error: loginError } = await supabase.auth.signInWithPassword({
+      email: form.email,
+      password: form.password,
+    });
 
-if (taken) {  
-  setError("Username already taken. Please choose another.");
-  setLoading(false);
-  return;
-}
-
-      // Create auth user
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: form.email,
-        password: form.password,
-        options: {
-          data: {
-            full_name: form.fullName,
-          },
-        },
-      });
-
-      if (signUpError) throw signUpError;
-
-  if (data.user) {
-  // Use service role API route to bypass RLS timing issue
-  const res = await fetch("/api/profile/update", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userId: data.user.id,
-      updates: {
-        username: form.username,
-        phone: form.phone,
-        full_name: form.fullName,
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || "Profile update failed");
-  }
-
-  router.push("/auth/role");
-}
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Something went wrong.";
-      setError(message);
-    } finally {
+    if (loginError) {
+      setError(loginError.message);
       setLoading(false);
+      return;
+    }
+
+    if (data.user) {
+      // Fetch profile to determine role
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .single();
+
+      if (profile?.role === "builder") {
+        router.push("/dashboard/builder");
+      } else {
+        router.push("/dashboard/investor");
+      }
     }
   };
 
@@ -89,63 +51,20 @@ if (taken) {
     <main className="min-h-screen flex flex-col items-center justify-center bg-[#0F0F1A] px-6 py-12">
       <div className="w-full max-w-sm">
 
-        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-2xl font-medium text-[#F5F3ED] mb-1">
             i<span className="text-[#C9A84C]">Vest</span>
           </h1>
-          <p className="text-[#A8A6B8] text-sm">Create your account</p>
-          <div className="flex justify-center gap-2 mt-4">
-            {[1, 2, 3, 4].map((s) => (
-              <div
-                key={s}
-                className={`h-1.5 w-8 rounded-full ${
-                  s === 1 ? "bg-[#C9A84C]" : "bg-[#3A3A52]"
-                }`}
-              />
-            ))}
-          </div>
+          <p className="text-[#A8A6B8] text-sm">Welcome back</p>
         </div>
 
-        {/* Error */}
         {error && (
           <div className="bg-red-900/30 border border-red-700 text-red-300 text-xs rounded-lg px-4 py-3 mb-4">
             {error}
           </div>
         )}
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div>
-            <label className="text-[#A8A6B8] text-xs mb-1.5 block">
-              Full Name
-            </label>
-            <input
-              name="fullName"
-              type="text"
-              required
-              value={form.fullName}
-              onChange={handleChange}
-              placeholder="e.g. Adewale Okonkwo"
-              className="w-full bg-[#1A1A2E] border border-[#3A3A52] text-[#F5F3ED] text-sm rounded-lg px-4 py-3 outline-none focus:border-[#C9A84C] transition placeholder-[#5C5A70]"
-            />
-          </div>
-
-          <div>
-            <label className="text-[#A8A6B8] text-xs mb-1.5 block">
-              Username
-            </label>
-            <input
-              name="username"
-              type="text"
-              required
-              value={form.username}
-              onChange={handleChange}
-              placeholder="e.g. adewale_inv"
-              className="w-full bg-[#1A1A2E] border border-[#3A3A52] text-[#F5F3ED] text-sm rounded-lg px-4 py-3 outline-none focus:border-[#C9A84C] transition placeholder-[#5C5A70]"
-            />
-          </div>
-
           <div>
             <label className="text-[#A8A6B8] text-xs mb-1.5 block">
               Email Address
@@ -169,37 +88,33 @@ if (taken) {
               name="password"
               type="password"
               required
-              minLength={8}
               value={form.password}
               onChange={handleChange}
-              placeholder="Min. 8 characters"
+              placeholder="Your password"
               className="w-full bg-[#1A1A2E] border border-[#3A3A52] text-[#F5F3ED] text-sm rounded-lg px-4 py-3 outline-none focus:border-[#C9A84C] transition placeholder-[#5C5A70]"
             />
           </div>
 
-          <div>
-            <label className="text-[#A8A6B8] text-xs mb-1.5 block">
-              Phone Number
-            </label>
-            <input
-              name="phone"
-              type="tel"
-              required
-              value={form.phone}
-              onChange={handleChange}
-              placeholder="+234 800 000 0000"
-              className="w-full bg-[#1A1A2E] border border-[#3A3A52] text-[#F5F3ED] text-sm rounded-lg px-4 py-3 outline-none focus:border-[#C9A84C] transition placeholder-[#5C5A70]"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={() => router.push("/auth/forgot-password")}
+            className="text-[#C9A84C] text-xs text-right hover:underline"
+          >
+            Forgot password?
+          </button>
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 my-1">
-            <div className="flex-1 h-px bg-[#3A3A52]" />
-            <span className="text-[#5C5A70] text-xs">or continue with</span>
-            <div className="flex-1 h-px bg-[#3A3A52]" />
-          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className={`w-full font-medium text-sm py-3 rounded-lg transition ${
+              loading
+                ? "bg-[#2A2A3E] text-[#5C5A70] cursor-not-allowed"
+                : "bg-[#C9A84C] text-[#1A1A2E] hover:opacity-90"
+            }`}
+          >
+            {loading ? "Signing in…" : "Log In"}
+          </button>
 
-          {/* OAuth */}
           <div className="flex gap-3">
             <button
               type="button"
@@ -236,26 +151,14 @@ if (taken) {
             </button>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full font-medium text-sm py-3 rounded-lg transition mt-2 ${
-              loading
-                ? "bg-[#2A2A3E] text-[#5C5A70] cursor-not-allowed"
-                : "bg-[#C9A84C] text-[#1A1A2E] hover:opacity-90"
-            }`}
-          >
-            {loading ? "Creating account…" : "Create Account"}
-          </button>
-
           <p className="text-center text-[#5C5A70] text-xs">
-            Already have an account?{" "}
+            Don&apos;t have an account?{" "}
             <button
               type="button"
-              onClick={() => router.push("/auth/login")}
+              onClick={() => router.push("/auth/signup")}
               className="text-[#C9A84C] hover:underline"
             >
-              Log In
+              Sign Up
             </button>
           </p>
         </form>

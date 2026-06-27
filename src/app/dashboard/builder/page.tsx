@@ -1,0 +1,363 @@
+"use client";
+
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import {
+  LayoutGrid,
+  MessageCircle,
+  Calendar,
+  Users,
+  User,
+  Plus,
+  TrendingUp,
+  Eye,
+  Bell,
+  Star,
+  Loader2,
+  ChevronRight,
+} from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+
+type Project = {
+  id: string;
+  name: string;
+  short_description: string;
+  category: string;
+  sector: string;
+  funding_goal: number;
+  equity_offered: number;
+  amount_raised: number;
+  tier: string;
+  is_published: boolean;
+  created_at: string;
+};
+
+const NAV = [
+  { id: "projects", icon: LayoutGrid, label: "Projects" },
+  { id: "chats", icon: MessageCircle, label: "Chats" },
+  { id: "meetings", icon: Calendar, label: "Meetings" },
+  { id: "team", icon: Users, label: "Team" },
+  { id: "profile", icon: User, label: "Profile" },
+];
+
+function formatCurrency(amount: number) {
+  if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
+  if (amount >= 1000) return `$${(amount / 1000).toFixed(0)}K`;
+  return `$${amount}`;
+}
+
+function getRaisedPercent(goal: number, raised: number) {
+  if (!goal) return 0;
+  return Math.min(Math.round((raised / goal) * 100), 100);
+}
+
+export default function BuilderDashboard() {
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeNav, setActiveNav] = useState("projects");
+  const [profile, setProfile] = useState<{
+    full_name: string;
+    username: string;
+  } | null>(null);
+
+  const fetchProfile = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from("profiles")
+      .select("full_name, username")
+      .eq("id", user.id)
+      .single();
+    if (data) setProfile(data);
+  }, [supabase]);
+
+  const fetchMyProjects = useCallback(async () => {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data } = await supabase
+      .from("projects")
+      .select("*")
+      .eq("founder_id", user.id)
+      .order("created_at", { ascending: false });
+
+    setProjects(data || []);
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => {
+    const loadData = async () => {
+      await fetchMyProjects();
+      await fetchProfile();
+    };
+
+    void loadData();
+  }, [fetchMyProjects, fetchProfile]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
+
+  const totalRaised = projects.reduce(
+    (sum, p) => sum + (p.amount_raised || 0),
+    0
+  );
+  const totalGoal = projects.reduce(
+    (sum, p) => sum + (p.funding_goal || 0),
+    0
+  );
+
+  return (
+    <div className="min-h-screen bg-[#0F0F1A] flex flex-col">
+
+      {/* Top bar */}
+      <header className="sticky top-0 z-20 bg-[#0F0F1A] border-b border-[#3A3A52] px-4 py-3 flex items-center gap-3">
+        <h1 className="text-lg font-medium text-[#F5F3ED]">
+          i<span className="text-[#C9A84C]">Vest</span>
+        </h1>
+        <div className="flex-1">
+          <p className="text-[#A8A6B8] text-xs">
+            Builder dashboard
+          </p>
+        </div>
+        <button className="relative">
+          <Bell size={20} className="text-[#A8A6B8]" />
+        </button>
+        <button
+          onClick={handleLogout}
+          className="w-8 h-8 rounded-full bg-[#C9A84C20] text-[#C9A84C] text-xs font-medium flex items-center justify-center"
+        >
+          {profile?.full_name
+            ? profile.full_name
+                .split(" ")
+                .map((n) => n[0])
+                .join("")
+                .toUpperCase()
+                .slice(0, 2)
+            : ".."}
+        </button>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 pb-24">
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="bg-[#1A1A2E] border border-[#3A3A52] rounded-xl p-3 text-center">
+            <div className="text-[#C9A84C] text-lg font-medium">
+              {projects.length}
+            </div>
+            <div className="text-[#5C5A70] text-xs mt-0.5">Projects</div>
+          </div>
+          <div className="bg-[#1A1A2E] border border-[#3A3A52] rounded-xl p-3 text-center">
+            <div className="text-[#C9A84C] text-lg font-medium">
+              {formatCurrency(totalRaised)}
+            </div>
+            <div className="text-[#5C5A70] text-xs mt-0.5">Raised</div>
+          </div>
+          <div className="bg-[#1A1A2E] border border-[#3A3A52] rounded-xl p-3 text-center">
+            <div className="text-[#C9A84C] text-lg font-medium">
+              {formatCurrency(totalGoal)}
+            </div>
+            <div className="text-[#5C5A70] text-xs mt-0.5">Goal</div>
+          </div>
+        </div>
+
+        {/* Upload new project button */}
+        <button
+          onClick={() => router.push("/dashboard/builder/upload")}
+          className="w-full flex items-center justify-between bg-[#C9A84C] text-[#1A1A2E] rounded-xl px-4 py-3 mb-6 hover:opacity-90 transition"
+        >
+          <div className="flex items-center gap-3">
+            <Plus size={18} />
+            <div className="text-left">
+              <div className="text-sm font-medium">Upload new project</div>
+              <div className="text-xs opacity-70">
+                Connect with global investors
+              </div>
+            </div>
+          </div>
+          <ChevronRight size={16} />
+        </button>
+
+        {/* My projects */}
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-xs font-medium text-[#A8A6B8] uppercase tracking-wider">
+            My projects
+          </span>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 size={22} className="text-[#C9A84C] animate-spin" />
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 border border-dashed border-[#3A3A52] rounded-xl">
+            <LayoutGrid size={28} className="text-[#3A3A52]" />
+            <p className="text-[#5C5A70] text-sm">No projects yet</p>
+            <button
+              onClick={() => router.push("/dashboard/builder/upload")}
+              className="text-[#C9A84C] text-xs underline underline-offset-2"
+            >
+              Upload your first project
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {projects.map((p) => (
+              <div
+                key={p.id}
+                className="bg-[#1A1A2E] border border-[#3A3A52] rounded-xl p-4"
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      {p.tier === "premium" && (
+                        <Star
+                          size={11}
+                          className="text-[#C9A84C]"
+                          fill="#C9A84C"
+                        />
+                      )}
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full ${
+                          p.tier === "premium"
+                            ? "bg-[#C9A84C20] text-[#C9A84C]"
+                            : "bg-[#2A2A3E] text-[#A8A6B8]"
+                        }`}
+                      >
+                        {p.tier?.charAt(0).toUpperCase() + p.tier?.slice(1)}
+                      </span>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full ${
+                          p.category === "web3"
+                            ? "bg-purple-900 text-purple-300"
+                            : "bg-blue-900 text-blue-300"
+                        }`}
+                      >
+                        {p.category?.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="text-[#F5F3ED] text-sm font-medium">
+                      {p.name}
+                    </div>
+                    <div className="text-[#5C5A70] text-xs mt-0.5">
+                      {p.sector} · {p.is_published ? "Published" : "Draft"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Metrics */}
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <div className="bg-[#0F0F1A] rounded-lg p-2 text-center">
+                    <div className="text-[#F5F3ED] text-xs font-medium">
+                      {formatCurrency(p.funding_goal)}
+                    </div>
+                    <div className="text-[#5C5A70] text-xs">Goal</div>
+                  </div>
+                  <div className="bg-[#0F0F1A] rounded-lg p-2 text-center">
+                    <div className="text-[#F5F3ED] text-xs font-medium">
+                      {p.equity_offered}%
+                    </div>
+                    <div className="text-[#5C5A70] text-xs">Equity</div>
+                  </div>
+                  <div className="bg-[#0F0F1A] rounded-lg p-2 text-center">
+                    <div className="text-[#C9A84C] text-xs font-medium">
+                      {getRaisedPercent(p.funding_goal, p.amount_raised)}%
+                    </div>
+                    <div className="text-[#5C5A70] text-xs">Raised</div>
+                  </div>
+                </div>
+
+                {/* Progress */}
+                <div className="h-1.5 bg-[#2A2A3E] rounded-full overflow-hidden mb-3">
+                  <div
+                    className="h-full bg-[#C9A84C] rounded-full"
+                    style={{
+                      width: `${getRaisedPercent(
+                        p.funding_goal,
+                        p.amount_raised
+                      )}%`,
+                    }}
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() =>
+                      router.push(`/dashboard/project/${p.id}`)
+                    }
+                    className="flex-1 flex items-center justify-center gap-1.5 border border-[#3A3A52] text-[#A8A6B8] text-xs py-2 rounded-lg hover:border-[#5C5A70] transition"
+                  >
+                    <Eye size={13} />
+                    View
+                  </button>
+                  <button
+                    onClick={() => router.push("/dashboard/chats")}
+                    className="flex-1 flex items-center justify-center gap-1.5 border border-[#3A3A52] text-[#A8A6B8] text-xs py-2 rounded-lg hover:border-[#5C5A70] transition"
+                  >
+                    <MessageCircle size={13} />
+                    Chats
+                  </button>
+                  <button
+                    onClick={() =>
+                      router.push(
+                        `/dashboard/builder/analytics/${p.id}`
+                      )
+                    }
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-[#C9A84C] text-[#1A1A2E] text-xs py-2 rounded-lg hover:opacity-90 transition font-medium"
+                  >
+                    <TrendingUp size={13} />
+                    Analytics
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom nav */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-[#0F0F1A] border-t border-[#3A3A52] flex z-20">
+        {NAV.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeNav === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => {
+                setActiveNav(item.id);
+                if (item.id === "chats")
+                  router.push("/dashboard/chats");
+                if (item.id === "meetings")
+                  router.push("/dashboard/meetings");
+                if (item.id === "profile")
+                  router.push("/dashboard/profile");
+              }}
+              className="flex-1 flex flex-col items-center gap-1 py-3"
+            >
+              <Icon
+                size={20}
+                className={
+                  isActive ? "text-[#C9A84C]" : "text-[#5C5A70]"
+                }
+              />
+              <span
+                className={`text-xs ${
+                  isActive ? "text-[#C9A84C]" : "text-[#5C5A70]"
+                }`}
+              >
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}

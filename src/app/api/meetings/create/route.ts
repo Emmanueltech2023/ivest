@@ -1,0 +1,89 @@
+import { createClient } from "@supabase/supabase-js";
+import { NextRequest, NextResponse } from "next/server";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+export async function POST(req: NextRequest) {
+  try {
+    const {
+      conversationId,
+      organizerId,
+      participantId,
+      title,
+      agenda,
+      scheduledAt,
+      timezone,
+    } = await req.json();
+
+    if (!organizerId || !title || !scheduledAt) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    // Create meeting
+    const { data: meeting, error: meetingError } = await supabase
+      .from("meetings")
+      .insert({
+        conversation_id: conversationId || null,
+        organizer_id: organizerId,
+        title,
+        agenda: agenda || null,
+        scheduled_at: scheduledAt,
+        timezone: timezone || "UTC",
+        status: "pending",
+      })
+      .select()
+      .single();
+
+    if (meetingError) throw meetingError;
+
+    // Add organizer as participant
+    await supabase.from("meeting_participants").insert({
+      meeting_id: meeting.id,
+      user_id: organizerId,
+      status: "accepted",
+    });
+
+    // Add other participant if provided
+    if (participantId) {
+      await supabase.from("meeting_participants").insert({
+        meeting_id: meeting.id,
+        user_id: participantId,
+        status: "invited",
+      });
+    }
+
+    // Send system message in chat
+    if (conversationId) {
+      const scheduledDate = new Date(scheduledAt).toLocaleString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZoneName: "short",
+      });
+
+      await supabase.from("messages").insert({
+        conversation_id: conversationId,
+        sender_id: organizerId,
+        content: `📅 MEETING SCHEDULED\n\n"${title}"\n${scheduledDate}\n\nAgenda: ${
+          agenda || "No agenda provided"
+        }\n\nAll participants will receive email reminders.`,
+        message_type: "system",
+        is_read: false,
+      });
+    }
+
+    return NextResponse.json({ meeting });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

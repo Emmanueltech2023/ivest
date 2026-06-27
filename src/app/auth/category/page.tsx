@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Globe, Blocks } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 const CATEGORIES = [
   {
@@ -28,6 +29,29 @@ const CATEGORIES = [
 export default function CategoryPage() {
   const router = useRouter();
   const [selected, setSelected] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleContinue = async () => {
+    if (!selected) return;
+    setLoading(true);
+
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+   if (user) {
+  await fetch("/api/profile/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId: user.id,
+      updates: { category: selected },
+    }),
+  });
+}
+
+    router.push("/auth/kyc");
+    setLoading(false);
+  };
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center bg-[#0F0F1A] px-6 py-12">
@@ -39,8 +63,6 @@ export default function CategoryPage() {
             i<span className="text-[#C9A84C]">Vest</span>
           </h1>
           <p className="text-[#A8A6B8] text-sm">What is your primary interest?</p>
-
-          {/* Step indicator */}
           <div className="flex justify-center gap-2 mt-4">
             {[1, 2, 3, 4].map((s) => (
               <div
@@ -68,10 +90,9 @@ export default function CategoryPage() {
                     : "border-[#3A3A52] bg-[#1A1A2E] hover:border-[#5C5A70]"
                 }`}
               >
-                {/* Top row */}
                 <div className="flex items-center gap-3">
                   <div
-                    className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                    className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
                       isSelected ? "bg-[#C9A84C20]" : "bg-[#2A2A3E]"
                     }`}
                   >
@@ -95,7 +116,7 @@ export default function CategoryPage() {
                     </div>
                   </div>
                   {isSelected && (
-                    <div className="w-5 h-5 rounded-full bg-[#C9A84C] flex items-center justify-center flex-shrink-0">
+                    <div className="w-5 h-5 rounded-full bg-[#C9A84C] flex items-center justify-center shrink-0">
                       <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                         <path
                           d="M2 5l2.5 2.5L8 3"
@@ -109,12 +130,10 @@ export default function CategoryPage() {
                   )}
                 </div>
 
-                {/* Description */}
                 <p className="text-[#5C5A70] text-xs leading-relaxed">
                   {cat.description}
                 </p>
 
-                {/* Example tags */}
                 <div className="flex flex-wrap gap-2">
                   {cat.examples.map((ex) => (
                     <span
@@ -136,15 +155,15 @@ export default function CategoryPage() {
 
         {/* Continue */}
         <button
-          onClick={() => selected && router.push("/auth/kyc")}
-          disabled={!selected}
+          onClick={handleContinue}
+          disabled={!selected || loading}
           className={`w-full font-medium text-sm py-3 rounded-lg transition ${
-            selected
+            selected && !loading
               ? "bg-[#C9A84C] text-[#1A1A2E] hover:opacity-90"
               : "bg-[#2A2A3E] text-[#5C5A70] cursor-not-allowed"
           }`}
         >
-          Continue
+          {loading ? "Saving…" : "Continue"}
         </button>
 
         <p className="text-center text-[#5C5A70] text-xs mt-4">

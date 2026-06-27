@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import {
   IdCard,
   Camera,
@@ -41,6 +42,31 @@ const STEPS = [
 
 export default function KYCPage() {
   const router = useRouter();
+
+const supabase = createClient();
+
+const handleComplete = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    router.push("/auth/login");
+    return;
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (profile?.role === "builder") {
+    router.push("/dashboard/builder");
+  } else {
+    router.push("/dashboard/investor");
+  }
+};
+
+
+  
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
   const [activeStep, setActiveStep] = useState("id");
   const [emailCode, setEmailCode] = useState(["", "", "", "", "", ""]);
@@ -125,7 +151,7 @@ export default function KYCPage() {
                   className="w-full flex items-center gap-3 px-4 py-3 text-left"
                 >
                   <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
                       isDone
                         ? "bg-[#EAF3DE]"
                         : isActive
@@ -302,13 +328,13 @@ export default function KYCPage() {
 
         {/* Complete button */}
         {allDone && (
-          <button
-            onClick={() => router.push("/dashboard/investor")}
-            className="w-full bg-[#C9A84C] text-[#1A1A2E] font-medium text-sm py-3 rounded-lg hover:opacity-90 transition"
-          >
-            Complete Verification →
-          </button>
-        )}
+  <button
+    onClick={handleComplete}
+    className="w-full bg-[#C9A84C] text-[#1A1A2E] font-medium text-sm py-3 rounded-lg hover:opacity-90 transition"
+  >
+    Complete Verification →
+  </button>
+)}
 
         {!allDone && (
           <p className="text-center text-[#5C5A70] text-xs">
