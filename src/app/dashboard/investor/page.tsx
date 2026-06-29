@@ -2,20 +2,19 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
+import DashboardShell from "@/components/DashboardShell";
 import {
-  Compass,
-  MessageCircle,
-  Calendar,
-  Bookmark,
-  User,
   Search,
   SlidersHorizontal,
   Star,
   CheckCircle,
   TrendingUp,
-  Bell,
-  ChevronDown,
+  MessageCircle,
+  Bookmark,
   Loader2,
+  ChevronDown,
+  MapPin,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -30,6 +29,8 @@ type Project = {
   amount_raised: number;
   country: string;
   tier: string;
+  image_url?: string | null; // Added field to support rich project layout images
+  banner_url?: string | null; // Added alternative mapping fallback
   profiles: {
     id: string;
     full_name: string;
@@ -40,32 +41,11 @@ type Project = {
   };
 };
 
-const NAV = [
-  { id: "explore", icon: Compass, label: "Explore" },
-  { id: "chats", icon: MessageCircle, label: "Chats" },
-  { id: "meetings", icon: Calendar, label: "Meetings" },
-  { id: "bookmarks", icon: Bookmark, label: "Saved" },
-  { id: "profile", icon: User, label: "Profile" },
-];
-
-const FILTERS = [
-  "All",
-  "Web2",
-  "Web3",
-  "Africa",
-  "Asia",
-  "FinTech",
-  "HealthTech",
-  "DeFi",
-];
+const FILTERS = ["All", "Web2", "Web3", "Africa", "Asia", "FinTech", "HealthTech", "DeFi"];
 
 function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+  if (!name) return "?";
+  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
 function formatCurrency(amount: number) {
@@ -89,9 +69,7 @@ const AVATAR_COLORS = [
 ];
 
 function getColor(id: string) {
-  const index =
-    id.charCodeAt(0) % AVATAR_COLORS.length;
-  return AVATAR_COLORS[index];
+  return AVATAR_COLORS[id?.charCodeAt(0) % AVATAR_COLORS.length];
 }
 
 export default function InvestorDashboard() {
@@ -99,7 +77,6 @@ export default function InvestorDashboard() {
   const supabase = useMemo(() => createClient(), []);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeNav, setActiveNav] = useState("explore");
   const [activeFilter, setActiveFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [bookmarks, setBookmarks] = useState<string[]>([]);
@@ -138,39 +115,25 @@ export default function InvestorDashboard() {
   }, [supabase]);
 
   useEffect(() => {
-    const loadData = async () => {
+    void (async () => {
       await fetchProjects();
       await fetchProfile();
       await fetchBookmarks();
-    };
-
-    void loadData();
+    })();
   }, [fetchProjects, fetchProfile, fetchBookmarks]);
 
   const toggleBookmark = async (projectId: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-
     const isBookmarked = bookmarks.includes(projectId);
-
     if (isBookmarked) {
-      await supabase
-        .from("bookmarks")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("project_id", projectId);
+      await supabase.from("bookmarks").delete()
+        .eq("user_id", user.id).eq("project_id", projectId);
       setBookmarks((prev) => prev.filter((id) => id !== projectId));
     } else {
-      await supabase
-        .from("bookmarks")
-        .insert({ user_id: user.id, project_id: projectId });
+      await supabase.from("bookmarks").insert({ user_id: user.id, project_id: projectId });
       setBookmarks((prev) => [...prev, projectId]);
     }
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
   };
 
   const filtered = projects.filter((p) => {
@@ -179,13 +142,11 @@ export default function InvestorDashboard() {
       p.sector?.toLowerCase().includes(search.toLowerCase()) ||
       p.country?.toLowerCase().includes(search.toLowerCase()) ||
       p.profiles?.full_name?.toLowerCase().includes(search.toLowerCase());
-
     const matchFilter =
       activeFilter === "All" ||
       p.category?.toLowerCase() === activeFilter.toLowerCase() ||
       p.sector === activeFilter ||
       p.country?.includes(activeFilter);
-
     return matchSearch && matchFilter;
   });
 
@@ -193,192 +154,121 @@ export default function InvestorDashboard() {
   const standard = filtered.filter((p) => p.tier !== "premium");
 
   return (
-    <div className="min-h-screen bg-[#0F0F1A] flex flex-col">
+    <DashboardShell role="investor" fullName={profile?.full_name} username={profile?.username}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 space-y-6 text-[#F5F3ED]">
 
-      {/* Top bar */}
-      <header className="sticky top-0 z-20 bg-[#0F0F1A] border-b border-[#3A3A52] px-4 py-3 flex items-center gap-3">
-        <h1 className="text-lg font-medium text-[#F5F3ED]">
-          i<span className="text-[#C9A84C]">Vest</span>
-        </h1>
-        <div className="flex-1 flex items-center gap-2 bg-[#1A1A2E] border border-[#3A3A52] rounded-lg px-3 py-2">
-          <Search size={14} className="text-[#5C5A70] shrink-0" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search startups, sectors, founders…"
-            className="flex-1 bg-transparent text-[#F5F3ED] text-sm outline-none placeholder-[#5C5A70]"
-          />
-        </div>
-        <button className="relative">
-          <Bell size={20} className="text-[#A8A6B8]" />
-        </button>
-        <button
-          onClick={handleLogout}
-          className="w-8 h-8 rounded-full bg-[#C9A84C20] text-[#C9A84C] text-xs font-medium flex items-center justify-center"
-        >
-          {profile ? getInitials(profile.full_name) : ".."}
-        </button>
-      </header>
-
-      {/* Filter bar */}
-      <div className="px-4 py-3 flex gap-2 overflow-x-auto border-b border-[#3A3A52]">
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setActiveFilter(f)}
-            className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition ${
-              activeFilter === f
-                ? "bg-[#C9A84C] text-[#1A1A2E] border-[#C9A84C] font-medium"
-                : "border-[#3A3A52] text-[#A8A6B8] hover:border-[#5C5A70]"
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-        <button className="shrink-0 flex items-center gap-1 text-xs px-3 py-1.5 rounded-full border border-[#3A3A52] text-[#A8A6B8]">
-          <SlidersHorizontal size={11} />
-          More
-          <ChevronDown size={11} />
-        </button>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 pb-24">
-
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <Loader2 size={24} className="text-[#C9A84C] animate-spin" />
-            <p className="text-[#5C5A70] text-sm">Loading projects…</p>
+        {/* Global Toolbar Panel */}
+        <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between bg-[#1A1A2E]/30 border border-[#3A3A52]/60 p-4 rounded-xl backdrop-blur-md">
+          {/* Search container */}
+          <div className="flex-1 max-w-lg flex items-center gap-3 bg-[#0F0F1A] border border-[#3A3A52]/80 focus-within:border-[#C9A84C] focus-within:ring-1 focus-within:ring-[#C9A84C]/20 rounded-lg px-3.5 py-2.5 transition duration-200">
+            <Search size={15} className="text-[#5C5A70] shrink-0" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search startups, sectors, founders…"
+              className="flex-1 bg-transparent text-xs outline-none placeholder-[#5C5A70] text-[#F5F3ED]"
+            />
           </div>
-        ) : projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <p className="text-[#F5F3ED] text-sm font-medium">
-              No projects yet
-            </p>
-            <p className="text-[#5C5A70] text-xs text-center max-w-xs">
-              Be the first to list a project or check back soon as builders
-              join iVest.
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* Premium listings */}
-            {premium.length > 0 && (
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <Star
-                    size={13}
-                    className="text-[#C9A84C]"
-                    fill="#C9A84C"
-                  />
-                  <span className="text-xs font-medium text-[#A8A6B8] uppercase tracking-wider">
-                    Premium listings
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {premium.map((p) => (
-                    <ProjectCard
-                      key={p.id}
-                      project={p}
-                      bookmarks={bookmarks}
-                      toggleBookmark={toggleBookmark}
-                      getColor={getColor}
-                      formatCurrency={formatCurrency}
-                      getRaisedPercent={getRaisedPercent}
-                      getInitials={getInitials}
-                      router={router}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
 
-            {/* Standard listings */}
-            {standard.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-xs font-medium text-[#A8A6B8] uppercase tracking-wider">
-                    All listings
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {standard.map((p) => (
-                    <ProjectCard
-                      key={p.id}
-                      project={p}
-                      bookmarks={bookmarks}
-                      toggleBookmark={toggleBookmark}
-                      getColor={getColor}
-                      formatCurrency={formatCurrency}
-                      getRaisedPercent={getRaisedPercent}
-                      getInitials={getInitials}
-                      router={router}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+          {/* Quick Toolbar Inline Right Side Controls */}
+          <div className="flex items-center gap-3 justify-between md:justify-end">
+            {/* Native Clean Cross-Browser Scroll Bar Utility Container */}
+            <div className="flex items-center gap-2 overflow-x-auto [scrollbar-none] [&::-webkit-scrollbar]:hidden max-w-60 sm:max-w-md md:max-w-xs lg:max-w-md py-0.5">
+              {FILTERS.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setActiveFilter(f)}
+                  className={`shrink-0 text-[11px] uppercase tracking-wider px-3.5 py-1.5 rounded-md border font-semibold transition-all ${
+                    activeFilter === f
+                      ? "bg-[#C9A84C] text-[#1A1A2E] border-[#C9A84C] shadow-md shadow-[#C9A84C]/10"
+                      : "border-[#3A3A52]/60 text-[#A8A6B8] hover:border-[#5C5A70] hover:text-[#F5F3ED] bg-[#1A1A2E]/40"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
 
-            {filtered.length === 0 && (
-              <div className="text-center py-20">
-                <p className="text-[#5C5A70] text-sm">
-                  No projects match your search.
-                </p>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-[#0F0F1A] border-t border-[#3A3A52] flex z-20">
-        {NAV.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeNav === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => {
-                setActiveNav(item.id);
-                if (item.id === "chats")
-                  router.push("/dashboard/chats");
-                if (item.id === "meetings")
-                  router.push("/dashboard/meetings");
-                if (item.id === "profile")
-                  router.push("/dashboard/profile");
-              }}
-              className="flex-1 flex flex-col items-center gap-1 py-3"
-            >
-              <Icon
-                size={20}
-                className={
-                  isActive ? "text-[#C9A84C]" : "text-[#5C5A70]"
-                }
-              />
-              <span
-                className={`text-xs ${
-                  isActive ? "text-[#C9A84C]" : "text-[#5C5A70]"
-                }`}
-              >
-                {item.label}
-              </span>
+            <button className="flex items-center gap-2 bg-[#1A1A2E]/60 border border-[#3A3A52]/80 text-[#A8A6B8] text-xs px-3.5 py-2 rounded-lg hover:border-[#5C5A70] hover:text-[#F5F3ED] transition duration-150 shrink-0">
+              <SlidersHorizontal size={13} />
+              <span className="hidden sm:inline text-[11px] uppercase tracking-wider font-semibold">Filters</span>
+              <ChevronDown size={12} />
             </button>
-          );
-        })}
-      </nav>
-    </div>
+          </div>
+        </div>
+
+        {/* Dynamic Project Rendering Context */}
+        <div className="space-y-8 pb-16 md:pb-4">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-40 gap-3 bg-[#1A1A2E]/10 rounded-2xl border border-[#3A3A52]/40">
+              <Loader2 size={26} className="text-[#C9A84C] animate-spin" />
+              <p className="text-[#5C5A70] text-xs tracking-wide">Assembling active projects…</p>
+            </div>
+          ) : projects.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-32 gap-3 bg-[#1A1A2E]/20 rounded-2xl border border-dashed border-[#3A3A52] px-4 text-center">
+              <p className="text-[#F5F3ED] text-base font-medium">No projects listed yet</p>
+              <p className="text-[#5C5A70] text-xs max-w-xs">
+                Be the first to list an operation ecosystem here or revisit this dashboard later.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Premium Category Layout */}
+              {premium.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 pl-1">
+                    <Star size={14} className="text-[#C9A84C] fill-[#C9A84C]" />
+                    <span className="text-xs font-semibold text-[#A8A6B8] uppercase tracking-wider">
+                      Premium Listings
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {premium.map((p) => (
+                      <ProjectCard key={p.id} project={p} bookmarks={bookmarks}
+                        toggleBookmark={toggleBookmark} getColor={getColor}
+                        formatCurrency={formatCurrency} getRaisedPercent={getRaisedPercent}
+                        getInitials={getInitials} router={router} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Standard Category Layout */}
+              {standard.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 pl-1">
+                    <span className="text-xs font-semibold text-[#A8A6B8] uppercase tracking-wider">
+                      All Registered Listings
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {standard.map((p) => (
+                      <ProjectCard key={p.id} project={p} bookmarks={bookmarks}
+                        toggleBookmark={toggleBookmark} getColor={getColor}
+                        formatCurrency={formatCurrency} getRaisedPercent={getRaisedPercent}
+                        getInitials={getInitials} router={router} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Zero Filter Result fallback screen */}
+              {filtered.length === 0 && (
+                <div className="text-center py-24 bg-[#1A1A2E]/10 rounded-2xl border border-[#3A3A52]/30">
+                  <p className="text-[#5C5A70] text-sm">No items match your modified search params.</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </DashboardShell>
   );
 }
 
 function ProjectCard({
-  project: p,
-  bookmarks,
-  toggleBookmark,
-  getColor,
-  formatCurrency,
-  getRaisedPercent,
-  getInitials,
-  router,
+  project: p, bookmarks, toggleBookmark, getColor,
+  formatCurrency, getRaisedPercent, getInitials, router,
 }: {
   project: Project;
   bookmarks: string[];
@@ -391,136 +281,159 @@ function ProjectCard({
 }) {
   const isBookmarked = bookmarks.includes(p.id);
   const raisedPct = getRaisedPercent(p.funding_goal, p.amount_raised);
+  const projectCoverImage = p.image_url || p.banner_url;
 
   return (
-    <div className="bg-[#1A1A2E] border border-[#3A3A52] rounded-xl p-4 flex flex-col gap-3 hover:border-[#5C5A70] transition">
-
-      {/* Top row */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-2 flex-wrap">
-          {p.tier === "premium" && (
-            <Star size={12} className="text-[#C9A84C]" fill="#C9A84C" />
+    <div className="bg-[#1A1A2E] border border-[#3A3A52] rounded-xl overflow-hidden flex flex-col justify-between hover:border-[#5C5A70] transition-all duration-300 hover:-translate-y-0.5 group shadow-lg shadow-black/20">
+      
+      <div>
+        {/* Dynamic Project Visual Header Layer */}
+        <div className="h-32 w-full relative overflow-hidden bg-[#0F0F1A] border-b border-[#3A3A52]/30">
+          {projectCoverImage ? (
+            <Image
+              src={projectCoverImage}
+              alt={`${p.name} ecosystem preview`}
+              fill
+              unoptimized
+              className="object-cover group-hover:scale-[1.04] transition-transform duration-700 ease-out"
+            />
+          ) : (
+            <div className="w-full h-full bg-linear-to-br from-[#1A1A2E] via-[#231E3D] to-[#0F0F1A]" />
           )}
-          <span
-            className={`text-xs px-2 py-0.5 rounded-full ${
-              p.category === "web3"
-                ? "bg-purple-900 text-purple-300"
-                : "bg-blue-900 text-blue-300"
-            }`}
-          >
-            {p.category?.toUpperCase()}
-          </span>
-          <span className="text-xs text-[#5C5A70]">{p.sector}</span>
-        </div>
-        <button onClick={() => toggleBookmark(p.id)}>
-          <Bookmark
-            size={15}
-            className={
-              isBookmarked
-                ? "text-[#C9A84C] fill-[#C9A84C]"
-                : "text-[#5C5A70]"
-            }
-          />
-        </button>
-      </div>
-
-      {/* Founder + name */}
-      <div className="flex items-center gap-3">
-        <div
-          className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-medium shrink-0 ${getColor(
-            p.profiles?.id || "a"
-          )}`}
-        >
-          {getInitials(p.profiles?.full_name || "?")}
-        </div>
-        <div>
-          <div className="text-[#F5F3ED] text-sm font-medium">
-            {p.name}
+          {/* Linear Backdrop protection block */}
+          <div className="absolute inset-0 bg-linear-to-t from-[#1A1A2E] via-[#1A1A2E]/40 to-transparent" />
+          
+          {/* Floating Bookmark Trigger */}
+          <div className="absolute top-3 right-3 z-10">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleBookmark(p.id);
+              }}
+              className="p-1.5 rounded-md bg-[#0F0F1A]/80 border border-[#3A3A52]/60 hover:border-[#C9A84C] text-[#A8A6B8] hover:text-[#C9A84C] backdrop-blur-xs transition"
+            >
+              <Bookmark size={14} className={isBookmarked ? "text-[#C9A84C] fill-[#C9A84C]" : ""} />
+            </button>
           </div>
-          <div className="flex items-center gap-1">
-            {p.profiles?.is_verified && (
-              <CheckCircle size={11} className="text-emerald-400" />
+        </div>
+
+        {/* Content Container Body */}
+        <div className="px-5 pt-4 pb-2 space-y-4">
+          
+          {/* Card Header metadata layer */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-sm ${
+                p.category?.toLowerCase() === "web3" ? "bg-purple-950/80 text-purple-300 border border-purple-800/30" : "bg-blue-950/80 text-blue-300 border border-blue-800/30"
+              }`}>
+                {p.category?.toUpperCase() || "WEB3"}
+              </span>
+              <span className="text-[10px] text-[#A8A6B8] bg-[#0F0F1A]/50 px-2 py-0.5 rounded border border-[#3A3A52]/30 font-medium">{p.sector}</span>
+            </div>
+            
+            {p.country && (
+              <span className="flex items-center gap-0.5 text-[11px] text-[#5C5A70]">
+                <MapPin size={10} />
+                {p.country}
+              </span>
             )}
-            <span className="text-[#5C5A70] text-xs">
-              {p.profiles?.is_verified
-                ? "Verified founder"
-                : p.profiles?.full_name}
-            </span>
           </div>
+
+          {/* Profile Card Center Content Layer */}
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold tracking-wider shrink-0 border border-white/5 shadow-md overflow-hidden ${getColor(p.profiles?.id || "a")}`}>
+              {p.profiles?.avatar_url ? (
+                <Image
+                  src={p.profiles.avatar_url}
+                  alt={p.profiles.full_name || p.name}
+                  width={40}
+                  height={40}
+                  unoptimized
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                getInitials(p.profiles?.full_name || "?")
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[#F5F3ED] text-base font-semibold truncate group-hover:text-[#C9A84C] transition duration-150">
+                {p.name}
+              </div>
+              <div className="flex items-center gap-1 min-w-0">
+                {p.profiles?.is_verified && (
+                  <CheckCircle size={12} className="text-emerald-400 fill-emerald-400/10 shrink-0" />
+                )}
+                <span className="text-[#5C5A70] text-xs truncate font-medium">
+                  by {p.profiles?.full_name || "Anonymous Founder"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Context description block */}
+          <p className="text-[#A8A6B8] text-xs leading-relaxed line-clamp-2 min-h-8">
+            {p.short_description}
+          </p>
         </div>
       </div>
 
-      {/* Description */}
-      <p className="text-[#A8A6B8] text-xs leading-relaxed line-clamp-2">
-        {p.short_description}
-      </p>
+      {/* Metrics Section Footer Block */}
+      <div className="px-5 pb-5 pt-3 border-t border-[#3A3A52]/30 bg-[#141426]/60 space-y-3.5">
+        <div className="grid grid-cols-3 gap-2 text-left">
+          <div className="bg-[#0F0F1A]/50 rounded-lg p-2 border border-[#3A3A52]/20">
+            <div className="text-[#F5F3ED] text-xs font-bold truncate">{formatCurrency(p.funding_goal)}</div>
+            <div className="text-[#5C5A70] text-[9px] uppercase tracking-wider font-bold mt-0.5">Goal</div>
+          </div>
+          <div className="bg-[#0F0F1A]/50 rounded-lg p-2 border border-[#3A3A52]/20">
+            <div className="text-[#F5F3ED] text-xs font-bold">{p.equity_offered}%</div>
+            <div className="text-[#5C5A70] text-[9px] uppercase tracking-wider font-bold mt-0.5">Equity</div>
+          </div>
+          <div className="bg-[#0F0F1A]/50 rounded-lg p-2 border border-[#3A3A52]/20">
+            <div className="text-[#C9A84C] text-xs font-bold">{raisedPct}%</div>
+            <div className="text-[#5C5A70] text-[9px] uppercase tracking-wider font-bold mt-0.5">Raised</div>
+          </div>
+        </div>
 
-      {/* Metrics */}
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <div className="text-[#5C5A70] text-xs mb-0.5">Goal</div>
-          <div className="text-[#F5F3ED] text-sm font-medium">
-            {formatCurrency(p.funding_goal)}
-          </div>
+        {/* Progress Tracker Layer */}
+        <div className="h-1 bg-[#0F0F1A] rounded-full overflow-hidden">
+          <div className="h-full bg-[#C9A84C] rounded-full transition-all duration-500" style={{ width: `${raisedPct}%` }} />
         </div>
-        <div className="flex-1">
-          <div className="text-[#5C5A70] text-xs mb-0.5">Equity</div>
-          <div className="text-[#F5F3ED] text-sm font-medium">
-            {p.equity_offered}%
-          </div>
-        </div>
-        <div className="flex-1">
-          <div className="text-[#5C5A70] text-xs mb-0.5">Raised</div>
-          <div className="text-[#C9A84C] text-sm font-medium">
-            {raisedPct}%
-          </div>
+
+        {/* Operational Trigger Elements */}
+        <div className="flex gap-2.5 pt-0.5">
+          <button
+            onClick={async () => {
+              const supabaseClient = createClient();
+              const { data: { user } } = await supabaseClient.auth.getUser();
+              if (!user) return;
+              const res = await fetch("/api/conversations/start", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  userId: user.id,
+                  otherUserId: p.profiles?.id,
+                  projectId: p.id,
+                }),
+              });
+              const { conversationId } = await res.json();
+              router.push(`/dashboard/chats?conversationId=${conversationId}`);
+            }}
+            className="flex-1 flex items-center justify-center gap-1.5 bg-[#C9A84C] text-[#1A1A2E] text-[11px] font-bold uppercase tracking-wider py-2.5 rounded-lg hover:bg-[#b5953e] transition duration-150 shadow-md shadow-[#C9A84C]/5"
+          >
+            <MessageCircle size={13} />
+            Chat
+          </button>
+          
+          <button
+            onClick={() => router.push(`/dashboard/project/${p.id}`)}
+            className="flex-1 flex items-center justify-center gap-1.5 bg-[#0F0F1A]/40 border border-[#3A3A52] text-[#A8A6B8] text-[11px] font-bold uppercase tracking-wider py-2.5 rounded-lg hover:border-[#5C5A70] hover:text-[#F5F3ED] transition duration-150"
+          >
+            <TrendingUp size={13} />
+            Details
+          </button>
         </div>
       </div>
 
-      {/* Progress bar */}
-      <div className="h-1.5 bg-[#2A2A3E] rounded-full overflow-hidden">
-        <div
-          className="h-full bg-[#C9A84C] rounded-full transition-all"
-          style={{ width: `${raisedPct}%` }}
-        />
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-2 pt-1">
-        <button
-  onClick={async () => {
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const res = await fetch("/api/conversations/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: user.id,
-        otherUserId: p.profiles?.id,
-        projectId: p.id,
-      }),
-    });
-
-    const { conversationId } = await res.json();
-    router.push(`/dashboard/chats?conversationId=${conversationId}`);
-  }}
-  className="flex-1 flex items-center justify-center gap-1.5 bg-[#C9A84C] text-[#1A1A2E] text-xs font-medium py-2 rounded-lg hover:opacity-90 transition"
->
-  <MessageCircle size={13} />
-  Chat
-</button>
-        <button
-          onClick={() =>
-            router.push(`/dashboard/project/${p.id}`)
-          }
-          className="flex-1 flex items-center justify-center gap-1.5 border border-[#3A3A52] text-[#A8A6B8] text-xs py-2 rounded-lg hover:border-[#5C5A70] transition"
-        >
-          <TrendingUp size={13} />
-          Details
-        </button>
-      </div>
     </div>
   );
 }
